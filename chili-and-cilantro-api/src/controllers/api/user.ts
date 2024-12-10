@@ -1,25 +1,26 @@
 import {
   AccountStatusTypeEnum,
   constants,
-  EmailTokenExpiredError,
-  EmailTokenUsedOrInvalidError,
+  HandleableError,
   IApiMessageResponse,
   ICreateUserBasics,
-  InvalidCredentialsError,
-  InvalidPasswordError,
   IRequestUser,
   ITokenResponse,
   IUserDocument,
   IUserResponse,
   ModelName,
+  StringNames,
+  translate,
+  UserNotFoundError,
+  ValidationError,
 } from '@chili-and-cilantro/chili-and-cilantro-lib';
 import {
+  handleError,
   IApplication,
-  MongooseValidationError,
   routeConfig,
   RouteConfig,
 } from '@chili-and-cilantro/chili-and-cilantro-node-lib';
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import { body, query } from 'express-validator';
 import { findAuthToken } from '../../middlewares/authenticate-token';
 import { JwtService } from '../../services/jwt';
@@ -184,18 +185,26 @@ export class UserController extends BaseController {
 
   /**
    * Change the user's password
-   * @param req
-   * @param res
+   * @param req The request object
+   * @param res The response object
+   * @param next The next function
+   * @returns
    */
-  public async changePassword(req: Request, res: Response): Promise<void> {
+  public async changePassword(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     try {
       const { currentPassword, newPassword } = req.body;
       const userId = req.user?.id;
       if (!userId) {
-        this.sendApiMessageResponse(
-          401,
-          { message: 'User not authenticated' } as IApiMessageResponse,
+        handleError(
+          new HandleableError(translate(StringNames.Common_Unauthorized), {
+            statusCode: 401,
+          }),
           res,
+          next,
         );
         return;
       }
@@ -211,22 +220,7 @@ export class UserController extends BaseController {
         res,
       );
     } catch (error) {
-      if (error instanceof InvalidCredentialsError) {
-        this.sendApiMessageResponse(
-          401,
-          { message: 'Current password is incorrect' } as IApiMessageResponse,
-          res,
-        );
-      } else if (error instanceof InvalidPasswordError) {
-        this.sendApiMessageResponse(
-          400,
-          { message: constants.PASSWORD_REGEX_ERROR } as IApiMessageResponse,
-          res,
-        );
-      } else {
-        console.error('Error changing password:', error);
-        this.sendApiErrorResponse(500, 'Internal server error', error, res);
-      }
+      handleError(error, res, next);
     }
   }
 
@@ -251,17 +245,20 @@ export class UserController extends BaseController {
    * Refresh the JWT token
    * @param req
    * @param res
+   * @param next
    * @returns
    */
-  private async refreshToken(req: Request, res: Response) {
+  private async refreshToken(req: Request, res: Response, next: NextFunction) {
     const UserModel = this.application.getModel<IUserDocument>(ModelName.User);
     try {
       const token = findAuthToken(req.headers);
       if (!token) {
-        this.sendApiMessageResponse(
-          401,
-          { message: 'No token provided' } as IApiMessageResponse,
+        handleError(
+          new HandleableError(translate(StringNames.Validation_InvalidToken), {
+            statusCode: 422,
+          }),
           res,
+          next,
         );
         return;
       }
@@ -275,7 +272,8 @@ export class UserController extends BaseController {
         !userDoc ||
         userDoc.accountStatusType !== AccountStatusTypeEnum.Active
       ) {
-        return res.status(403).json({ message: 'User not found or inactive' });
+        handleError(new UserNotFoundError(), res, next);
+        return;
       }
       const { token: newToken } = await this.jwtService.signToken(userDoc);
 
@@ -285,18 +283,22 @@ export class UserController extends BaseController {
         user: RequestUserService.makeRequestUser(userDoc),
       } as IUserResponse);
     } catch (error) {
-      console.error('Token refresh error:', error);
-      this.sendApiErrorResponse(500, 'Internal server error', error, res);
+      handleError(error, res, next);
     }
   }
 
   /**
    * Register a new user
-   * @param req
-   * @param res
+   * @param req The request object
+   * @param res The response object
+   * @param next The next function
    * @returns
    */
-  public async register(req: Request, res: Response): Promise<void> {
+  public async register(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     try {
       const { username, email, password, timezone } = req.body;
 
@@ -314,26 +316,22 @@ export class UserController extends BaseController {
         res,
       );
     } catch (error) {
-      if (error instanceof MongooseValidationError) {
-        this.sendApiMongoValidationErrorResponse(
-          400,
-          'Validation error',
-          error.errors,
-          res,
-        );
-      } else {
-        this.sendApiErrorResponse(500, 'Internal server error', error, res);
-      }
+      handleError(error, res, next);
     }
   }
 
   /**
    * Log in a user
-   * @param req
-   * @param res
+   * @param req The request object
+   * @param res The response object
+   * @param next The next function
    * @returns
    */
-  public async login(req: Request, res: Response): Promise<void> {
+  public async login(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     try {
       const { username, email, password } = req.body;
 
@@ -352,17 +350,22 @@ export class UserController extends BaseController {
         .status(200)
         .json({ token, message: 'Logged in successfully' } as ITokenResponse);
     } catch (error) {
-      this.sendApiErrorResponse(500, 'Internal server error', error, res);
+      handleError(error, res, next);
     }
   }
 
   /**
    * Verify an email token
-   * @param req
-   * @param res
+   * @param req The request object
+   * @param res The response object
+   * @param next The next function
    * @returns
    */
-  public async verifyEmailToken(req: Request, res: Response): Promise<void> {
+  public async verifyEmailToken(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     const emailToken = Array.isArray(req.query.token)
       ? req.query.token[0]
       : req.query.token;
@@ -371,10 +374,10 @@ export class UserController extends BaseController {
       typeof emailToken !== 'string' ||
       emailToken.length !== constants.EMAIL_TOKEN_LENGTH * 2
     ) {
-      this.sendApiMessageResponse(
-        400,
-        { message: 'Invalid token format' } as IApiMessageResponse,
+      handleError(
+        new ValidationError(translate(StringNames.Validation_InvalidToken)),
         res,
+        next,
       );
       return;
     }
@@ -388,17 +391,21 @@ export class UserController extends BaseController {
         res,
       );
     } catch (error) {
-      console.error('Error during email verification:', error);
-      this.sendApiErrorResponse(500, 'Internal server error', error, res);
+      handleError(error, res, next);
     }
   }
 
   /**
    * Resend the verification email
-   * @param req
-   * @param res
+   * @param req The request object
+   * @param res The response object
+   * @param next The next function
    */
-  public async resendVerification(req: Request, res: Response): Promise<void> {
+  public async resendVerification(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     const UserModel = this.application.getModel<IUserDocument>(ModelName.User);
     try {
       const { username, email } = req.body;
@@ -406,11 +413,7 @@ export class UserController extends BaseController {
       // Find the user
       const user = await UserModel.findOne(username ? { username } : { email });
       if (!user) {
-        this.sendApiMessageResponse(
-          404,
-          { message: 'User not found' } as IApiMessageResponse,
-          res,
-        );
+        handleError(new UserNotFoundError(), res, next);
         return;
       }
 
@@ -425,28 +428,22 @@ export class UserController extends BaseController {
         res,
       );
     } catch (error) {
-      if (error instanceof EmailTokenUsedOrInvalidError) {
-        this.sendApiMessageResponse(
-          400,
-          {
-            message: 'No active verification token found',
-          } as IApiMessageResponse,
-          res,
-        );
-      } else {
-        console.error('Error resending verification email:', error);
-        this.sendApiErrorResponse(500, 'Internal server error', error, res);
-      }
+      handleError(error, res, next);
     }
   }
 
   /**
    * Send a password reset email
-   * @param req
-   * @param res
+   * @param req The request object
+   * @param res The response object
+   * @param next The next function
    * @returns
    */
-  public async forgotPassword(req: Request, res: Response): Promise<void> {
+  public async forgotPassword(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     try {
       const { email } = req.body;
       const result = await this.userService.initiatePasswordReset(email);
@@ -457,21 +454,21 @@ export class UserController extends BaseController {
         res,
       );
     } catch (error) {
-      this.sendApiErrorResponse(
-        500,
-        'An unexpected error occurred. Please try again later.',
-        error,
-        res,
-      );
+      handleError(error, res, next);
     }
   }
 
   /**
    * Verify the password reset token
-   * @param req
-   * @param res
+   * @param req The request object
+   * @param res The response object
+   * @param next The next function
    */
-  public async verifyResetToken(req: Request, res: Response): Promise<void> {
+  public async verifyResetToken(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     try {
       const { token } = req.query;
       await this.userService.verifyEmailToken(token as string);
@@ -481,34 +478,21 @@ export class UserController extends BaseController {
         res,
       );
     } catch (error) {
-      if (error instanceof EmailTokenExpiredError) {
-        this.sendApiMessageResponse(
-          400,
-          {
-            message: 'Password reset token has expired',
-          } as IApiMessageResponse,
-          res,
-        );
-      } else if (error instanceof EmailTokenUsedOrInvalidError) {
-        this.sendApiMessageResponse(
-          400,
-          {
-            message: 'Invalid or already used password reset token',
-          } as IApiMessageResponse,
-          res,
-        );
-      } else {
-        this.sendApiErrorResponse(500, 'Internal server error', error, res);
-      }
+      handleError(error, res, next);
     }
   }
 
   /**
    * Reset the user's password
-   * @param req
-   * @param res
+   * @param req The request object
+   * @param res The response object
+   * @param next The next function
    */
-  public async resetPassword(req: Request, res: Response): Promise<void> {
+  public async resetPassword(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     try {
       const { token, password } = req.body;
       const user = await this.userService.resetPassword(token, password);
@@ -523,30 +507,7 @@ export class UserController extends BaseController {
         user: requestUser,
       } as IUserResponse);
     } catch (error) {
-      if (error instanceof EmailTokenExpiredError) {
-        this.sendApiMessageResponse(
-          400,
-          {
-            message: 'Password reset token has expired',
-          } as IApiMessageResponse,
-          res,
-        );
-      } else if (error instanceof EmailTokenUsedOrInvalidError) {
-        this.sendApiMessageResponse(
-          400,
-          {
-            message: 'Invalid or already used password reset token',
-          } as IApiMessageResponse,
-          res,
-        );
-      } else {
-        console.error('Error resetting password:', error);
-        this.sendApiMessageResponse(
-          500,
-          { message: 'Internal server error' } as IApiMessageResponse,
-          res,
-        );
-      }
+      handleError(error, res, next);
     }
   }
 }

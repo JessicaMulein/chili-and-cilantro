@@ -1,19 +1,24 @@
 import {
   DefaultLanguage,
   GlobalLanguageContext,
+  HandleableError,
   IApiErrorResponse,
   IApiExpressValidationErrorResponse,
   IApiMessageResponse,
   IApiMongoValidationErrorResponse,
   IMongoErrors,
   IRequestUser,
+  IUserDocument,
+  ModelName,
   StringLanguages,
   StringNames,
   translate,
+  UserNotFoundError,
 } from '@chili-and-cilantro/chili-and-cilantro-lib';
 import {
   ExpressValidationError,
   FlexibleValidationChain,
+  handleError,
   IApplication,
   RouteConfig,
 } from '@chili-and-cilantro/chili-and-cilantro-node-lib';
@@ -108,12 +113,12 @@ export abstract class BaseController {
       this.activeResponse = res;
       // if req.user wasn't added above, return an unauthorized response
       if (useAuthentication && !req.user) {
-        this.sendApiMessageResponse(
-          401,
-          {
-            message: translate(StringNames.Common_Unauthorized),
-          } as IApiMessageResponse,
+        handleError(
+          new HandleableError(translate(StringNames.Common_Unauthorized), {
+            statusCode: 401,
+          }),
           res,
+          next,
         );
         return;
       }
@@ -131,12 +136,8 @@ export abstract class BaseController {
           next,
           ...(handlerArgs ? handlerArgs : []),
         );
-
-        if (!res.headersSent) {
-          next();
-        }
       } catch (error) {
-        next(error);
+        handleError(error, res, next);
       }
     };
   }
@@ -249,10 +250,12 @@ export abstract class BaseController {
   ): void {
     authenticateToken(application, req, res, (err) => {
       if (err || !req.user) {
-        this.sendApiMessageResponse(
-          401,
-          { message: 'Unauthorized' } as IApiMessageResponse,
+        handleError(
+          new HandleableError(translate(StringNames.Common_Unauthorized), {
+            statusCode: 401,
+          }),
           res,
+          next,
         );
         return;
       }
@@ -305,8 +308,7 @@ export abstract class BaseController {
   ): void {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      this.sendApiExpressValidationErrorResponse(400, errors.array(), res);
-      next(new ExpressValidationError(errors));
+      handleError(new ExpressValidationError(errors), res, next);
       return;
     }
     // Create an object with only the validated fields
@@ -362,5 +364,31 @@ export abstract class BaseController {
       throw new Error('No active response');
     }
     return this.activeResponse;
+  }
+
+  protected async validateAndFetchRequestUser(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<IUserDocument> {
+    const UserModel = this.application.getModel<IUserDocument>(ModelName.User);
+    if (!req.user) {
+      handleError(
+        new HandleableError(translate(StringNames.Common_Unauthorized), {
+          statusCode: 401,
+        }),
+        res,
+        next,
+      );
+      Promise.reject();
+      return;
+    }
+    const user = await UserModel.findById(req.user.id);
+    if (!user) {
+      handleError(new UserNotFoundError(), res, next);
+      Promise.reject();
+      return;
+    }
+    return user;
   }
 }

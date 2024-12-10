@@ -1,3 +1,4 @@
+import { handleError } from '@chili-and-cilantro/chili-and-cilantro-node-lib';
 import { Application, static as expressStatic } from 'express';
 import { existsSync } from 'fs';
 import { join } from 'path';
@@ -57,7 +58,7 @@ export class AppRouter {
       serveStaticWithLogging(req, res, (err) => {
         if (err) {
           console.error('Error serving static file:', err);
-          next(err);
+          handleError(err, res, next);
           return;
         }
         next();

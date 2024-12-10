@@ -1,18 +1,15 @@
 import {
   CardType,
-  IUserDocument,
-  ModelName,
   TurnAction,
-  UserNotFoundError,
   ValidationError,
 } from '@chili-and-cilantro/chili-and-cilantro-lib';
 import {
+  handleError,
   IApplication,
   routeConfig,
   RouteConfig,
 } from '@chili-and-cilantro/chili-and-cilantro-node-lib';
-import { Request, Response } from 'express';
-import { InvalidTokenError } from 'express-oauth2-jwt-bearer';
+import { NextFunction, Request, Response } from 'express';
 import { body } from 'express-validator';
 import { ActionService } from '../../services/action';
 import { ChefService } from '../../services/chef';
@@ -103,32 +100,14 @@ export class GameController extends BaseController {
 
   /**
    * Creates a new game.
-   * @param req
-   * @param res
+   * @param req The request
+   * @param res The response
+   * @param next The next function
    * @returns
    */
-  private async createGame(req: Request, res: Response) {
-    const UserModel = this.application.getModel<IUserDocument>(ModelName.User);
+  private async createGame(req: Request, res: Response, next: NextFunction) {
     try {
-      if (!req.user) {
-        this.sendApiErrorResponse(
-          401,
-          'Invalid token',
-          new InvalidTokenError(),
-          res,
-        );
-        return;
-      }
-      const user = await UserModel.findById(req.user.id);
-      if (!user) {
-        this.sendApiErrorResponse(
-          500,
-          'User not found',
-          new UserNotFoundError(),
-          res,
-        );
-        return;
-      }
+      const user = await this.validateAndFetchRequestUser(req, res, next);
       const { name, userName, password, maxChefs } = req.body;
       const sanitizedName = (name as string)?.trim();
       const sanitizedUserName = (userName as string)?.trim();
@@ -144,42 +123,20 @@ export class GameController extends BaseController {
       );
       res.send({ game, chef });
     } catch (error) {
-      if (error instanceof ValidationError) {
-        res.status(400).json(error);
-      } else {
-        this.sendApiErrorResponse(500, 'An error occurred', error, res);
-      }
+      handleError(error, res, next);
     }
   }
 
   /**
    * Joins a game
-   * @param req
-   * @param res
+   * @param req The request
+   * @param res The response
+   * @param next The next function
    * @returns
    */
-  private async joinGame(req: Request, res: Response) {
-    const UserModel = this.application.getModel<IUserDocument>(ModelName.User);
+  private async joinGame(req: Request, res: Response, next: NextFunction) {
     try {
-      if (!req.user) {
-        this.sendApiErrorResponse(
-          401,
-          'Invalid token',
-          new InvalidTokenError(),
-          res,
-        );
-        return;
-      }
-      const user = await UserModel.findById(req.user.id);
-      if (!user) {
-        this.sendApiErrorResponse(
-          500,
-          'User not found',
-          new UserNotFoundError(),
-          res,
-        );
-        return;
-      }
+      const user = await this.validateAndFetchRequestUser(req, res, next);
       const { userName, password } = req.body;
       const gameCode = req.params.code;
       const sanitizedUserName = (userName as string)?.trim();
@@ -193,42 +150,20 @@ export class GameController extends BaseController {
       );
       res.send({ game, chef });
     } catch (error) {
-      if (error instanceof ValidationError) {
-        res.status(400).json(error);
-      } else {
-        res.status(500).json(error);
-      }
+      handleError(error, res, next);
     }
   }
 
   /**
    * Send a message to game chat
-   * @param req
-   * @param res
+   * @param req The request
+   * @param res The response
+   * @param next The next function
    * @returns
    */
-  private async sendMessage(req: Request, res: Response) {
-    const UserModel = this.application.getModel<IUserDocument>(ModelName.User);
+  private async sendMessage(req: Request, res: Response, next: NextFunction) {
     try {
-      if (!req.user) {
-        this.sendApiErrorResponse(
-          401,
-          'Invalid token',
-          new InvalidTokenError(),
-          res,
-        );
-        return;
-      }
-      const user = await UserModel.findById(req.user.id);
-      if (!user) {
-        this.sendApiErrorResponse(
-          500,
-          'User not found',
-          new UserNotFoundError(),
-          res,
-        );
-        return;
-      }
+      const user = await this.validateAndFetchRequestUser(req, res, next);
       const { message } = req.body;
       const gameCode = req.params.code;
       const sanitizedMessage = (message as string)?.trim();
@@ -239,42 +174,24 @@ export class GameController extends BaseController {
       );
       res.status(200).json(messageAction);
     } catch (e) {
-      if (e instanceof ValidationError) {
-        res.status(400).json(e);
-      } else {
-        this.sendApiErrorResponse(500, 'An error occurred', e, res);
-      }
+      handleError(e, res, next);
     }
   }
 
   /**
    * Gets the history of the game
-   * @param req
-   * @param res
+   * @param req The request
+   * @param res The response
+   * @param next The next function
    * @returns
    */
-  private async getGameHistory(req: Request, res: Response) {
-    const UserModel = this.application.getModel<IUserDocument>(ModelName.User);
+  private async getGameHistory(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
-      if (!req.user) {
-        this.sendApiErrorResponse(
-          401,
-          'Invalid token',
-          new InvalidTokenError(),
-          res,
-        );
-        return;
-      }
-      const user = await UserModel.findById(req.user.id);
-      if (!user) {
-        this.sendApiErrorResponse(
-          500,
-          'User not found',
-          new UserNotFoundError(),
-          res,
-        );
-        return;
-      }
+      await this.validateAndFetchRequestUser(req, res, next);
       const gameCode = req.params.code;
       const game = await this.gameService.getGameByCodeOrThrowAsync(
         gameCode,
@@ -293,32 +210,14 @@ export class GameController extends BaseController {
 
   /**
    * Starts a game
-   * @param req
-   * @param res
+   * @param req The request
+   * @param res The response
+   * @param next The next function
    * @returns
    */
-  private async startGame(req: Request, res: Response) {
-    const UserModel = this.application.getModel<IUserDocument>(ModelName.User);
+  private async startGame(req: Request, res: Response, next: NextFunction) {
     try {
-      if (!req.user) {
-        this.sendApiErrorResponse(
-          401,
-          'Invalid token',
-          new InvalidTokenError(),
-          res,
-        );
-        return;
-      }
-      const user = await UserModel.findById(req.user.id);
-      if (!user) {
-        this.sendApiErrorResponse(
-          500,
-          'User not found',
-          new UserNotFoundError(),
-          res,
-        );
-        return;
-      }
+      const user = await this.validateAndFetchRequestUser(req, res, next);
       const gameCode = req.params.code;
       const { game, action } = await this.gameService.performStartGameAsync(
         gameCode,
@@ -326,42 +225,24 @@ export class GameController extends BaseController {
       );
       res.status(200).json({ game, action });
     } catch (e) {
-      if (e instanceof ValidationError) {
-        res.status(400).json(e);
-      } else {
-        this.sendApiErrorResponse(500, 'An error occurred', e, res);
-      }
+      handleError(e, res, next);
     }
   }
 
   /**
    * Gets the available actions for the current turn
-   * @param req
-   * @param res
+   * @param req The request
+   * @param res The response
+   * @param next The next function
    * @returns
    */
-  private async getAvailableActions(req: Request, res: Response) {
-    const UserModel = this.application.getModel<IUserDocument>(ModelName.User);
+  private async getAvailableActions(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
-      if (!req.user) {
-        this.sendApiErrorResponse(
-          401,
-          'Invalid token',
-          new InvalidTokenError(),
-          res,
-        );
-        return;
-      }
-      const user = await UserModel.findById(req.user.id);
-      if (!user) {
-        this.sendApiErrorResponse(
-          500,
-          'User not found',
-          new UserNotFoundError(),
-          res,
-        );
-        return;
-      }
+      const user = await this.validateAndFetchRequestUser(req, res, next);
       const gameCode = req.params.code;
       const game = await this.gameService.getGameByCodeOrThrowAsync(
         gameCode,
@@ -371,42 +252,24 @@ export class GameController extends BaseController {
       const actions = this.gameService.availableTurnActions(game, chef);
       res.status(200).json(actions);
     } catch (e) {
-      if (e instanceof ValidationError) {
-        res.status(400).json(e);
-      } else {
-        this.sendApiErrorResponse(500, 'An error occurred', e, res);
-      }
+      handleError(e, res, next);
     }
   }
 
   /**
    * Performs a turn action for the specified game
-   * @param req
-   * @param res
+   * @param req The request
+   * @param res The response
+   * @param next The next function
    * @returns
    */
-  private async performTurnAction(req: Request, res: Response) {
-    const UserModel = this.application.getModel<IUserDocument>(ModelName.User);
+  private async performTurnAction(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
-      if (!req.user) {
-        this.sendApiErrorResponse(
-          401,
-          'Invalid token',
-          new InvalidTokenError(),
-          res,
-        );
-        return;
-      }
-      const user = await UserModel.findById(req.user.id);
-      if (!user) {
-        this.sendApiErrorResponse(
-          500,
-          'User not found',
-          new UserNotFoundError(),
-          res,
-        );
-        return;
-      }
+      const user = await this.validateAndFetchRequestUser(req, res, next);
       const gameCode = req.params.code;
       const { action, ingredient, bid } = req.body;
       const actionArgs = {
@@ -421,11 +284,7 @@ export class GameController extends BaseController {
       );
       res.status(200).json({ game, chef });
     } catch (e) {
-      if (e instanceof ValidationError) {
-        res.status(400).json(e);
-      } else {
-        this.sendApiErrorResponse(500, 'An error occurred', e, res);
-      }
+      handleError(e, res, next);
     }
   }
 }

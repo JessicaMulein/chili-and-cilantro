@@ -40,6 +40,7 @@ export * from './lib/errors/game-full';
 export * from './lib/errors/game-in-progress';
 export * from './lib/errors/game-password-mismatch';
 export * from './lib/errors/game-username-in-use';
+export * from './lib/errors/handleable-error';
 export * from './lib/errors/incorrect-game-phase';
 export * from './lib/errors/invalid-action';
 export * from './lib/errors/invalid-credentials';

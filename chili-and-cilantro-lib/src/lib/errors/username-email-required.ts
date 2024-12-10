@@ -1,4 +1,6 @@
-export class UsernameOrEmailRequiredError extends Error {
+import { ValidationError } from './validation-error';
+
+export class UsernameOrEmailRequiredError extends ValidationError {
   constructor() {
     super('Either username or email is required');
     this.name = 'UsernameOrEmailRequiredError';

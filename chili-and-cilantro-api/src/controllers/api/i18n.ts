@@ -4,10 +4,11 @@ import {
   LanguageCodeValues,
 } from '@chili-and-cilantro/chili-and-cilantro-lib';
 import {
+  handleError,
   routeConfig,
   RouteConfig,
 } from '@chili-and-cilantro/chili-and-cilantro-node-lib';
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import { param } from 'express-validator';
 import { BaseController } from '../base';
 
@@ -31,11 +32,19 @@ export class I18nController extends BaseController {
     ];
   }
 
-  private async i18n(req: Request, res: Response): Promise<void> {
+  private async i18n(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     const { languageCode } = req.params;
 
-    const language = languageCodeToStringLanguages(languageCode);
-
-    res.status(200).json(buildNestedI18nForLanguage(language));
+    try {
+      const language = languageCodeToStringLanguages(languageCode);
+      const i18nTable = buildNestedI18nForLanguage(language);
+      res.status(200).json(i18nTable);
+    } catch (error) {
+      handleError(error, res, next);
+    }
   }
 }

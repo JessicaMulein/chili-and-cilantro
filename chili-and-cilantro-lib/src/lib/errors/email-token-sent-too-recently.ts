@@ -1,6 +1,7 @@
 import constants from '../constants';
+import { HandleableError } from './handleable-error';
 
-export class EmailTokenSentTooRecentlyError extends Error {
+export class EmailTokenSentTooRecentlyError extends HandleableError {
   public readonly lastSent: Date;
   public readonly nextAvailableTime: Date;
 
@@ -16,6 +17,7 @@ export class EmailTokenSentTooRecentlyError extends Error {
 
     super(
       `Email token sent too recently. Please try again in ${timeRemaining} seconds.`,
+      { statusCode: 429 },
     );
     this.name = 'EmailTokenSentTooRecentlyError';
     this.lastSent = lastSent;

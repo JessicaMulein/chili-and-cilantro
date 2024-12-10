@@ -1,5 +1,6 @@
 import {
   GetModelFunction,
+  HandleableError,
   IBaseDocument,
 } from '@chili-and-cilantro/chili-and-cilantro-lib';
 import {
@@ -130,12 +131,26 @@ export class App implements IApplication {
       appRouter.init(this.expressApp, debug);
       // if none of the above handle the request, pass it to error handler
       this.expressApp.use(
-        (err: Error, req: Request, res: Response, next: NextFunction) => {
+        (
+          err: HandleableError | Error,
+          req: Request,
+          res: Response,
+          next: NextFunction,
+        ) => {
+          const handleableError =
+            err instanceof HandleableError
+              ? err
+              : new HandleableError(err.message, { cause: err });
+          if (handleableError.handled) {
+            console.error('Handled error:', err);
+            return next(handleableError);
+          }
           console.error('Unhandled error:', err);
+          handleableError.handled = true;
 
           // Check if headers have already been sent
           if (res.headersSent) {
-            return next(err);
+            return next(handleableError);
           }
 
           // You could add more detailed error handling here

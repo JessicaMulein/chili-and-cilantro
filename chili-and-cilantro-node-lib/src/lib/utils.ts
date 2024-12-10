@@ -1,7 +1,17 @@
-import { TransactionCallback } from '@chili-and-cilantro/chili-and-cilantro-lib';
-import { Request, Response } from 'express';
+import {
+  HandleableError,
+  IApiErrorResponse,
+  IApiExpressValidationErrorResponse,
+  IApiMongoValidationErrorResponse,
+  StringNames,
+  TransactionCallback,
+  translate,
+} from '@chili-and-cilantro/chili-and-cilantro-lib';
+import { NextFunction, Request, Response } from 'express';
 import { ClientSession, Connection, Types } from 'mongoose';
+import { ExpressValidationError } from './errors/express-validation-error';
 import { MissingValidatedDataError } from './errors/missing-validated-data';
+import { MongooseValidationError } from './errors/mongoose-validation-error';
 
 /**
  * Checks if the given id is a valid string id
@@ -137,5 +147,51 @@ export async function withTransaction<T>(
     throw error;
   } finally {
     if (needSession && s !== undefined) await s.endSession();
+  }
+}
+
+export function handleError(
+  error: unknown,
+  res: Response,
+  next: NextFunction,
+): void {
+  let handleableError: HandleableError;
+  let alreadyHandled = false;
+  if (error instanceof HandleableError) {
+    handleableError = error;
+    alreadyHandled = error.handled;
+  } else if (error instanceof Error) {
+    handleableError = new HandleableError(error.message, {
+      cause: error,
+      handled: true,
+    });
+  } else {
+    handleableError = new HandleableError(
+      (error as any).message ?? translate(StringNames.Common_UnexpectedError),
+      { sourceData: error },
+    );
+  }
+  if (!res.headersSent) {
+    if (error instanceof ExpressValidationError) {
+      res.status(handleableError.statusCode).json({
+        message: translate(StringNames.ValidationError),
+        errors: error.errors,
+      } as IApiExpressValidationErrorResponse);
+    } else if (error instanceof MongooseValidationError) {
+      res.status(handleableError.statusCode).json({
+        message: translate(StringNames.ValidationError),
+        errors: error.errors,
+      } as IApiMongoValidationErrorResponse);
+    } else {
+      res.status(handleableError.statusCode).json({
+        message: handleableError.message,
+        error: handleableError,
+      } as IApiErrorResponse);
+    }
+    handleableError.handled = true;
+  }
+  if (!alreadyHandled) {
+    handleableError.handled = true;
+    next(handleableError);
   }
 }

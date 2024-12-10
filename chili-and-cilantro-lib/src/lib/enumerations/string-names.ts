@@ -9,9 +9,11 @@ export enum StringNames {
   Common_Dashboard = 'common_dashboard',
   Common_Site = 'common_site',
   Common_Unauthorized = 'common_unauthorized',
+  Common_UnexpectedError = 'common_unexpectedError',
   ForgotPassword_Title = 'forgotPassword_title',
   Login_LoginButton = 'login_loginButton',
   LogoutButton = 'logoutButton',
   RegisterButton = 'registerButton',
-  ValidationError = 'validation_error',
+  ValidationError = 'validationError',
+  Validation_InvalidToken = 'validation_invalidToken',
 }

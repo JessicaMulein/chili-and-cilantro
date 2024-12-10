@@ -1,4 +1,6 @@
-export class UsernameInUseError extends Error {
+import { ValidationError } from './validation-error';
+
+export class UsernameInUseError extends ValidationError {
   constructor() {
     super('Username is already in use');
     this.name = 'UsernameInUseError';
